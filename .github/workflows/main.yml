@@ -2,6 +2,15 @@ name: build-cairo-msvc
 
 on:
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: Build type
+        required: true
+        default: Release
+        type: choice
+        options:
+          - Release
+          - Debug
 
 jobs:
   build:
@@ -9,11 +18,12 @@ jobs:
 
     env:
       PREFIX: ${{ github.workspace }}\prefix
+      BUILD_TYPE: ${{ github.event.inputs.build_type }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup build tools
+      - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install tools
@@ -38,9 +48,11 @@ jobs:
         run: |
           cmake -S zlib -B build-zlib ^
             -G Ninja ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
-            -DBUILD_SHARED_LIBS=OFF
-          cmake --build build-zlib
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build-zlib --config %BUILD_TYPE%
           cmake --install build-zlib
 
       ################################
@@ -52,11 +64,13 @@ jobs:
         run: |
           cmake -S libpng -B build-libpng ^
             -G Ninja ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
             -DPNG_SHARED=OFF ^
             -DPNG_STATIC=ON ^
-            -DZLIB_ROOT=%PREFIX%
-          cmake --build build-libpng
+            -DZLIB_ROOT=%PREFIX% ^
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build-libpng --config %BUILD_TYPE%
           cmake --install build-libpng
 
       ################################
@@ -69,6 +83,8 @@ jobs:
           meson setup build-pixman pixman ^
             --default-library=static ^
             --prefix=%PREFIX% ^
+            --buildtype=%BUILD_TYPE% ^
+            -Db_vscrt=mt ^
             -Dtests=disabled
           ninja -C build-pixman
           ninja -C build-pixman install
@@ -82,12 +98,14 @@ jobs:
         run: |
           cmake -S freetype -B build-freetype ^
             -G Ninja ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
             -DBUILD_SHARED_LIBS=OFF ^
             -DFT_WITH_ZLIB=ON ^
             -DFT_WITH_PNG=ON ^
-            -DZLIB_ROOT=%PREFIX%
-          cmake --build build-freetype
+            -DZLIB_ROOT=%PREFIX% ^
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build-freetype --config %BUILD_TYPE%
           cmake --install build-freetype
 
       ################################
@@ -100,21 +118,26 @@ jobs:
           meson setup build-cairo cairo ^
             --default-library=static ^
             --prefix=%PREFIX% ^
+            --buildtype=%BUILD_TYPE% ^
+            -Db_vscrt=mt ^
             -Dfontconfig=disabled ^
             -Dxlib=disabled ^
             -Dxcb=disabled ^
             -Dtests=disabled
-
           ninja -C build-cairo
           ninja -C build-cairo install
+
+      ################################
+      # Package
+      ################################
 
       - name: Package
         shell: bash
         run: |
-          tar -czf cairo-msvc-static.tar.gz prefix
+          tar -czf cairo-msvc-${BUILD_TYPE}.tar.gz prefix
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: cairo-msvc-static
-          path: cairo-msvc-static.tar.gz
+          name: cairo-msvc-${{ env.BUILD_TYPE }}
+          path: cairo-msvc-${{ env.BUILD_TYPE }}.tar.gz
