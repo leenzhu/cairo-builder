@@ -85,52 +85,8 @@ jobs:
           git clone https://gitlab.freedesktop.org/cairo/cairo.git
           cd cairo && git checkout $CAIRO_VERSION && cd ..
 
-      - name: Prepare expat overlay
-        shell: bash
-        run: |
-          mkdir -p fontconfig/subprojects/packagefiles/expat
-      
-          cat > fontconfig/subprojects/packagefiles/expat/meson.build << 'EOF'
-          project('expat','c',
-            default_options : ['default_library=static']
-          )
-      
-          expat_sources = files(
-            'lib/xmlparse.c',
-            'lib/xmlrole.c',
-            'lib/xmltok.c'
-          )
-      
-          expat_lib = static_library(
-            'expat',
-            expat_sources,
-            include_directories : include_directories('lib'),
-            c_args : ['-DXML_STATIC']
-          )
-      
-          expat_dep = declare_dependency(
-            include_directories : include_directories('lib'),
-            link_with : expat_lib
-          )
-          EOF
-      
-          echo "patch_directory = expat" >> fontconfig/subprojects/expat.wrap
 
-      ########################################
-      # fontconfig (stable fixed expat)
-      ########################################
 
-      - name: Build fontconfig
-        shell: cmd
-        run: |
-          meson setup build-fontconfig fontconfig ^
-            --default-library=static ^
-            --prefix=%PREFIX% ^
-            --buildtype=%MESON_BUILD_TYPE% ^
-            -Db_vscrt=mt ^
-            -Dtests=disabled 
-          ninja -C build-fontconfig
-          ninja -C build-fontconfig install
 
       ########################################
       # zlib
@@ -215,6 +171,28 @@ jobs:
             -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
           cmake --build build-freetype
           cmake --install build-freetype
+          
+      - name: Fix pkg-config
+        shell: bash
+        run: |
+          echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_LIBDIR=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          
+      ########################################
+      # fontconfig (stable fixed expat)
+      ########################################
+      - name: Build fontconfig
+        shell: cmd
+        run: |
+          meson setup build-fontconfig fontconfig ^
+            --default-library=static ^
+            --prefix=%PREFIX% ^
+            --buildtype=%MESON_BUILD_TYPE% ^
+            -Db_vscrt=mt ^
+            -Dtests=disabled ^
+            -Dwrap_mode=nofallback
+          ninja -C build-fontconfig
+          ninja -C build-fontconfig install
 
       ########################################
       # harfbuzz
@@ -231,13 +209,7 @@ jobs:
             -Dtests=disabled
           ninja -C build-harfbuzz
           ninja -C build-harfbuzz install
-
-      - name: Fix pkg-config
-        shell: bash
-        run: |
-          echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-          echo "PKG_CONFIG_LIBDIR=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-          
+         
 
 
       ########################################
