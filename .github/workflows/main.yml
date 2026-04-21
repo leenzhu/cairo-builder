@@ -34,6 +34,7 @@ jobs:
       ################################
 
       - name: Build zlib
+        shell: cmd
         run: |
           cmake -S zlib -B build-zlib ^
             -G Ninja ^
@@ -47,6 +48,7 @@ jobs:
       ################################
 
       - name: Build libpng
+        shell: cmd
         run: |
           cmake -S libpng -B build-libpng ^
             -G Ninja ^
@@ -62,6 +64,7 @@ jobs:
       ################################
 
       - name: Build pixman
+        shell: cmd
         run: |
           meson setup build-pixman pixman ^
             --default-library=static ^
@@ -75,6 +78,7 @@ jobs:
       ################################
 
       - name: Build freetype
+        shell: cmd
         run: |
           cmake -S freetype -B build-freetype ^
             -G Ninja ^
@@ -91,6 +95,7 @@ jobs:
       ################################
 
       - name: Build cairo
+        shell: cmd
         run: |
           meson setup build-cairo cairo ^
             --default-library=static ^
@@ -104,6 +109,7 @@ jobs:
           ninja -C build-cairo install
 
       - name: Package
+        shell: bash
         run: |
           tar -czf cairo-msvc-static.tar.gz prefix
 
