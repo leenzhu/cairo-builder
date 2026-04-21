@@ -128,8 +128,7 @@ jobs:
             --prefix=%PREFIX% ^
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
-            -Dtests=disabled ^
-            -Dexpat:static=true
+            -Dtests=disabled 
           ninja -C build-fontconfig
           ninja -C build-fontconfig install
 
