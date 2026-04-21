@@ -1,4 +1,4 @@
-name: build-cairo-msvc
+name: cairo-msvc-final-stable
 
 on:
   workflow_dispatch:
@@ -19,14 +19,19 @@ jobs:
     env:
       PREFIX: ${{ github.workspace }}\prefix
       BUILD_TYPE: ${{ github.event.inputs.build_type }}
+
+      # Meson 需要小写
       MESON_BUILD_TYPE: ${{ github.event.inputs.build_type == 'Release' && 'release' || 'debug' }}
+
       PKG_CONFIG_PATH: ${{ github.workspace }}\prefix\lib\pkgconfig
 
+      # pinned versions (稳定性核心)
       CAIRO_VERSION: 1.18.0
       PIXMAN_VERSION: pixman-0.42.2
       FREETYPE_VERSION: VER-2-13-2
       HARFBUZZ_VERSION: 8.3.0
       FONTCONFIG_VERSION: 2.15.0
+      EXPAT_VERSION: R_2_6_2
 
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +39,27 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install build tools
+      - name: Install tools
         run: |
           choco install ninja pkgconfiglite -y
           pip install meson
+
+      ########################################
+      # CRT mapping (关键稳定点)
+      ########################################
+
+      - name: Setup MSVC CRT
+        shell: bash
+        run: |
+          if [ "${{ env.BUILD_TYPE }}" = "Debug" ]; then
+            echo "MSVC_CRT=MultiThreadedDebug" >> $GITHUB_ENV
+          else
+            echo "MSVC_CRT=MultiThreaded" >> $GITHUB_ENV
+          fi
+
+      ########################################
+      # Clone all deps (pinned)
+      ########################################
 
       - name: Clone dependencies
         shell: bash
@@ -57,12 +79,15 @@ jobs:
           git clone https://gitlab.freedesktop.org/fontconfig/fontconfig.git
           cd fontconfig && git checkout $FONTCONFIG_VERSION && cd ..
 
+          git clone https://github.com/libexpat/libexpat.git
+          cd libexpat && git checkout $EXPAT_VERSION && cd ..
+
           git clone https://gitlab.freedesktop.org/cairo/cairo.git
           cd cairo && git checkout $CAIRO_VERSION && cd ..
 
-      ################################
+      ########################################
       # zlib
-      ################################
+      ########################################
 
       - name: Build zlib
         shell: cmd
@@ -72,13 +97,13 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
             -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DBUILD_SHARED_LIBS=OFF ^
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
           cmake --build build-zlib
           cmake --install build-zlib
 
-      ################################
+      ########################################
       # libpng
-      ################################
+      ########################################
 
       - name: Build libpng
         shell: cmd
@@ -90,13 +115,28 @@ jobs:
             -DPNG_SHARED=OFF ^
             -DPNG_STATIC=ON ^
             -DZLIB_ROOT=%PREFIX% ^
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
           cmake --build build-libpng
           cmake --install build-libpng
 
-      ################################
+      ########################################
+      # expat (critical fix)
+      ########################################
+
+      - name: Build expat
+        shell: cmd
+        run: |
+          cmake -S libexpat/expat -B build-expat ^
+            -G Ninja ^
+            -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
+          cmake --build build-expat
+          cmake --install build-expat
+
+      ########################################
       # pixman
-      ################################
+      ########################################
 
       - name: Build pixman
         shell: cmd
@@ -110,9 +150,9 @@ jobs:
           ninja -C build-pixman
           ninja -C build-pixman install
 
-      ################################
+      ########################################
       # freetype
-      ################################
+      ########################################
 
       - name: Build freetype
         shell: cmd
@@ -125,13 +165,13 @@ jobs:
             -DFT_WITH_ZLIB=ON ^
             -DFT_WITH_PNG=ON ^
             -DZLIB_ROOT=%PREFIX% ^
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
           cmake --build build-freetype
           cmake --install build-freetype
 
-      ################################
+      ########################################
       # harfbuzz
-      ################################
+      ########################################
 
       - name: Build harfbuzz
         shell: cmd
@@ -145,9 +185,9 @@ jobs:
           ninja -C build-harfbuzz
           ninja -C build-harfbuzz install
 
-      ################################
-      # fontconfig
-      ################################
+      ########################################
+      # fontconfig (stable fixed expat)
+      ########################################
 
       - name: Build fontconfig
         shell: cmd
@@ -157,13 +197,14 @@ jobs:
             --prefix=%PREFIX% ^
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
+            -Dexpat=enabled ^
             -Dtests=disabled
           ninja -C build-fontconfig
           ninja -C build-fontconfig install
 
-      ################################
-      # cairo
-      ################################
+      ########################################
+      # cairo final
+      ########################################
 
       - name: Build cairo
         shell: cmd
@@ -180,17 +221,17 @@ jobs:
           ninja -C build-cairo
           ninja -C build-cairo install
 
-      ################################
+      ########################################
       # package
-      ################################
+      ########################################
 
       - name: Package
         shell: bash
         run: |
-          tar -czf cairo-msvc-static-${BUILD_TYPE}.tar.gz prefix
+          tar -czf cairo-msvc-final-${BUILD_TYPE}.tar.gz prefix
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: cairo-msvc-static-${{ env.BUILD_TYPE }}
-          path: cairo-msvc-static-${{ env.BUILD_TYPE }}.tar.gz
+          name: cairo-msvc-final-${{ env.BUILD_TYPE }}
+          path: cairo-msvc-final-${BUILD_TYPE}.tar.gz
