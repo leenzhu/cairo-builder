@@ -19,6 +19,8 @@ jobs:
     env:
       PREFIX: ${{ github.workspace }}\prefix
       BUILD_TYPE: ${{ github.event.inputs.build_type }}
+      MESON_BUILD_TYPE: ${{ github.event.inputs.build_type == 'Release' && 'release' || 'debug' }}
+      PKG_CONFIG_PATH: ${{ github.workspace }}\prefix\lib\pkgconfig
 
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +28,9 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install tools
+      - name: Install build tools
         run: |
-          choco install ninja
+          choco install ninja pkgconfiglite -y
           pip install meson
 
       - name: Clone dependencies
@@ -83,7 +85,7 @@ jobs:
           meson setup build-pixman pixman ^
             --default-library=static ^
             --prefix=%PREFIX% ^
-            --buildtype=%BUILD_TYPE% ^
+            --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
             -Dtests=disabled
           ninja -C build-pixman
@@ -118,7 +120,7 @@ jobs:
           meson setup build-cairo cairo ^
             --default-library=static ^
             --prefix=%PREFIX% ^
-            --buildtype=%BUILD_TYPE% ^
+            --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
             -Dfontconfig=disabled ^
             -Dxlib=disabled ^
@@ -131,12 +133,12 @@ jobs:
       # Package
       ################################
 
-      - name: Package
+      - name: Package artifact
         shell: bash
         run: |
           tar -czf cairo-msvc-${BUILD_TYPE}.tar.gz prefix
 
-      - name: Upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cairo-msvc-${{ env.BUILD_TYPE }}
