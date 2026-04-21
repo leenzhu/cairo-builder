@@ -185,6 +185,12 @@ jobs:
           ninja -C build-harfbuzz
           ninja -C build-harfbuzz install
 
+      - name: Fix pkg-config
+        shell: bash
+        run: |
+          echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_LIBDIR=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
+          
       ########################################
       # fontconfig (stable fixed expat)
       ########################################
@@ -197,7 +203,6 @@ jobs:
             --prefix=%PREFIX% ^
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
-            -Dexpat=enabled ^
             -Dtests=disabled
           ninja -C build-fontconfig
           ninja -C build-fontconfig install
@@ -221,6 +226,20 @@ jobs:
           ninja -C build-cairo
           ninja -C build-cairo install
 
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-demo
+          path: build/demo.exe
+          
       ########################################
       # package
       ########################################
