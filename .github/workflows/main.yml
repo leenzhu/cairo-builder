@@ -22,6 +22,12 @@ jobs:
       MESON_BUILD_TYPE: ${{ github.event.inputs.build_type == 'Release' && 'release' || 'debug' }}
       PKG_CONFIG_PATH: ${{ github.workspace }}\prefix\lib\pkgconfig
 
+      CAIRO_VERSION: 1.18.0
+      PIXMAN_VERSION: pixman-0.42.2
+      FREETYPE_VERSION: VER-2-13-2
+      HARFBUZZ_VERSION: 8.3.0
+      FONTCONFIG_VERSION: 2.15.0
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,12 +40,25 @@ jobs:
           pip install meson
 
       - name: Clone dependencies
+        shell: bash
         run: |
           git clone https://github.com/madler/zlib
           git clone https://github.com/glennrp/libpng
+
           git clone https://gitlab.freedesktop.org/pixman/pixman.git
+          cd pixman && git checkout $PIXMAN_VERSION && cd ..
+
           git clone https://gitlab.freedesktop.org/freetype/freetype.git
+          cd freetype && git checkout $FREETYPE_VERSION && cd ..
+
+          git clone https://github.com/harfbuzz/harfbuzz.git
+          cd harfbuzz && git checkout $HARFBUZZ_VERSION && cd ..
+
+          git clone https://gitlab.freedesktop.org/fontconfig/fontconfig.git
+          cd fontconfig && git checkout $FONTCONFIG_VERSION && cd ..
+
           git clone https://gitlab.freedesktop.org/cairo/cairo.git
+          cd cairo && git checkout $CAIRO_VERSION && cd ..
 
       ################################
       # zlib
@@ -50,11 +69,11 @@ jobs:
         run: |
           cmake -S zlib -B build-zlib ^
             -G Ninja ^
-            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DBUILD_SHARED_LIBS=OFF ^
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-          cmake --build build-zlib --config %BUILD_TYPE%
+          cmake --build build-zlib
           cmake --install build-zlib
 
       ################################
@@ -66,13 +85,13 @@ jobs:
         run: |
           cmake -S libpng -B build-libpng ^
             -G Ninja ^
-            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DPNG_SHARED=OFF ^
             -DPNG_STATIC=ON ^
             -DZLIB_ROOT=%PREFIX% ^
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-          cmake --build build-libpng --config %BUILD_TYPE%
+          cmake --build build-libpng
           cmake --install build-libpng
 
       ################################
@@ -100,15 +119,47 @@ jobs:
         run: |
           cmake -S freetype -B build-freetype ^
             -G Ninja ^
-            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DBUILD_SHARED_LIBS=OFF ^
             -DFT_WITH_ZLIB=ON ^
             -DFT_WITH_PNG=ON ^
             -DZLIB_ROOT=%PREFIX% ^
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-          cmake --build build-freetype --config %BUILD_TYPE%
+          cmake --build build-freetype
           cmake --install build-freetype
+
+      ################################
+      # harfbuzz
+      ################################
+
+      - name: Build harfbuzz
+        shell: cmd
+        run: |
+          meson setup build-harfbuzz harfbuzz ^
+            --default-library=static ^
+            --prefix=%PREFIX% ^
+            --buildtype=%MESON_BUILD_TYPE% ^
+            -Db_vscrt=mt ^
+            -Dtests=disabled
+          ninja -C build-harfbuzz
+          ninja -C build-harfbuzz install
+
+      ################################
+      # fontconfig
+      ################################
+
+      - name: Build fontconfig
+        shell: cmd
+        run: |
+          meson setup build-fontconfig fontconfig ^
+            --default-library=static ^
+            --prefix=%PREFIX% ^
+            --buildtype=%MESON_BUILD_TYPE% ^
+            -Db_vscrt=mt ^
+            -Dtests=disabled
+          ninja -C build-fontconfig
+          ninja -C build-fontconfig install
 
       ################################
       # cairo
@@ -122,7 +173,7 @@ jobs:
             --prefix=%PREFIX% ^
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
-            -Dfontconfig=disabled ^
+            -Dfontconfig=enabled ^
             -Dxlib=disabled ^
             -Dxcb=disabled ^
             -Dtests=disabled
@@ -130,16 +181,16 @@ jobs:
           ninja -C build-cairo install
 
       ################################
-      # Package
+      # package
       ################################
 
-      - name: Package artifact
+      - name: Package
         shell: bash
         run: |
-          tar -czf cairo-msvc-${BUILD_TYPE}.tar.gz prefix
+          tar -czf cairo-msvc-static-${BUILD_TYPE}.tar.gz prefix
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: cairo-msvc-${{ env.BUILD_TYPE }}
-          path: cairo-msvc-${{ env.BUILD_TYPE }}.tar.gz
+          name: cairo-msvc-static-${{ env.BUILD_TYPE }}
+          path: cairo-msvc-static-${{ env.BUILD_TYPE }}.tar.gz
