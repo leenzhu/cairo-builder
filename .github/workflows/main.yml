@@ -1,12 +1,12 @@
 name: cairo-msvc-final-stable
 
-on:
+on: 
   workflow_dispatch:
     inputs:
       build_type:
-        description: Build type
+        description: 'Build type'
         required: true
-        default: Release
+        default: 'Release'
         type: choice
         options:
           - Release
@@ -19,13 +19,13 @@ jobs:
     env:
       PREFIX: ${{ github.workspace }}\prefix
       BUILD_TYPE: ${{ github.event.inputs.build_type }}
-
-      # Meson 需要小写
+      
+      # Meson needs lowercase
       MESON_BUILD_TYPE: ${{ github.event.inputs.build_type == 'Release' && 'release' || 'debug' }}
 
       PKG_CONFIG_PATH: ${{ github.workspace }}\prefix\lib\pkgconfig
 
-      # pinned versions (稳定性核心)
+      # pinned versions (stability core)
       CAIRO_VERSION: 1.18.0
       PIXMAN_VERSION: pixman-0.42.2
       FREETYPE_VERSION: VER-2-13-2
@@ -45,7 +45,7 @@ jobs:
           pip install meson
 
       ########################################
-      # CRT mapping (关键稳定点)
+      # CRT mapping (key stability point)
       ########################################
 
       - name: Setup MSVC CRT
@@ -85,9 +85,6 @@ jobs:
           git clone https://gitlab.freedesktop.org/cairo/cairo.git
           cd cairo && git checkout $CAIRO_VERSION && cd ..
 
-
-
-
       ########################################
       # zlib
       ########################################
@@ -123,7 +120,7 @@ jobs:
           cmake --install build-libpng
 
       ########################################
-      # expat (critical fix)
+      # expat
       ########################################
 
       - name: Build expat
@@ -132,6 +129,7 @@ jobs:
           cmake -S libexpat/expat -B build-expat ^
             -G Ninja ^
             -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
             -DBUILD_SHARED_LIBS=OFF ^
             -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
           cmake --build build-expat
@@ -171,16 +169,11 @@ jobs:
             -DCMAKE_MSVC_RUNTIME_LIBRARY=%MSVC_CRT%
           cmake --build build-freetype
           cmake --install build-freetype
-          
-      - name: Fix pkg-config
-        shell: bash
-        run: |
-          echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-          echo "PKG_CONFIG_LIBDIR=$PREFIX/lib/pkgconfig" >> $GITHUB_ENV
-          
+
       ########################################
-      # fontconfig (stable fixed expat)
+      # fontconfig (fixed expat dependency)
       ########################################
+
       - name: Build fontconfig
         shell: cmd
         run: |
@@ -190,7 +183,10 @@ jobs:
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
             -Dtests=disabled ^
-            -Dwrap_mode=nofallback
+            -Dwrap_mode=nofallback ^
+            -Dexpat=enabled ^
+            -Ddoc=disabled ^
+            -Dcache-build=disabled
           ninja -C build-fontconfig
           ninja -C build-fontconfig install
 
@@ -206,11 +202,10 @@ jobs:
             --prefix=%PREFIX% ^
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
-            -Dtests=disabled
+            -Dtests=disabled ^
+            -Dfreetype=enabled
           ninja -C build-harfbuzz
           ninja -C build-harfbuzz install
-         
-
 
       ########################################
       # cairo final
@@ -225,26 +220,81 @@ jobs:
             --buildtype=%MESON_BUILD_TYPE% ^
             -Db_vscrt=mt ^
             -Dfontconfig=enabled ^
+            -Dfreetype=enabled ^
+            -Dpng=enabled ^
+            -Dzlib=enabled ^
+            -Dharfbuzz=enabled ^
             -Dxlib=disabled ^
             -Dxcb=disabled ^
-            -Dtests=disabled
+            -Dtests=disabled ^
+            -Ddocs=disabled
           ninja -C build-cairo
           ninja -C build-cairo install
 
-      - name: Configure
+      ########################################
+      # Create test demo
+      ########################################
+
+      - name: Create test file
+        shell: bash
         run: |
-          cmake -S . -B build -G Ninja ^
-            -DCMAKE_BUILD_TYPE=Release
+          cat > demo.c << 'EOF'
+          #include <cairo.h>
+          #include <stdio.h>
 
-      - name: Build
-        run: cmake --build build
+          int main() {
+              cairo_surface_t *surface;
+              cairo_t *cr;
 
-      - name: Upload exe
+              surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 200, 200);
+              cr = cairo_create(surface);
+
+              // Draw a red rectangle
+              cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
+              cairo_rectangle(cr, 50, 50, 100, 100);
+              cairo_fill(cr);
+
+              // Save to PNG
+              cairo_status_t status = cairo_surface_write_to_png(surface, "test.png");
+              if (status != CAIRO_STATUS_SUCCESS) {
+                  printf("Error saving PNG: %s\n", cairo_status_to_string(status));
+                  return 1;
+              }
+
+              printf("Test image created successfully!\n");
+
+              cairo_destroy(cr);
+              cairo_surface_destroy(surface);
+              return 0;
+          }
+          EOF
+
+      - name: Compile demo
+        shell: cmd
+        run: |
+          cl demo.c ^
+            /I "%PREFIX%\include\cairo" ^
+            /I "%PREFIX%\include" ^
+            /I "%PREFIX%\include\freetype2" ^
+            /link /LIBPATH:"%PREFIX%\lib" ^
+            cairo.lib freetype.lib fontconfig.lib harfbuzz.lib ^
+            expat.lib libpng16.lib zlib.lib pixman-1.lib ^
+            gdi32.lib user32.lib ole32.lib oleaut32.lib uuid.lib ^
+            /OUT:demo.exe
+
+      - name: Run demo
+        shell: cmd
+        run: |
+          demo.exe
+
+      - name: Upload demo
         uses: actions/upload-artifact@v4
         with:
-          name: cairo-demo
-          path: build/demo.exe
-          
+          name: cairo-demo-${{ env.BUILD_TYPE }}
+          path: |
+            demo.exe
+            test.png
+
       ########################################
       # package
       ########################################
@@ -252,10 +302,10 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          tar -czf cairo-msvc-final-${BUILD_TYPE}.tar.gz prefix
+          tar -czf cairo-msvc-${BUILD_TYPE}.tar.gz -C prefix .
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: cairo-msvc-final-${{ env.BUILD_TYPE }}
-          path: cairo-msvc-final-${BUILD_TYPE}.tar.gz
+          path: cairo-msvc-${BUILD_TYPE}.tar.gz
