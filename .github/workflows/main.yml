@@ -1,0 +1,114 @@
+name: build-cairo-msvc
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    env:
+      PREFIX: ${{ github.workspace }}\prefix
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install tools
+        run: |
+          choco install ninja
+          pip install meson
+
+      - name: Clone dependencies
+        run: |
+          git clone https://github.com/madler/zlib
+          git clone https://github.com/glennrp/libpng
+          git clone https://gitlab.freedesktop.org/pixman/pixman.git
+          git clone https://gitlab.freedesktop.org/freetype/freetype.git
+          git clone https://gitlab.freedesktop.org/cairo/cairo.git
+
+      ################################
+      # zlib
+      ################################
+
+      - name: Build zlib
+        run: |
+          cmake -S zlib -B build-zlib ^
+            -G Ninja ^
+            -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build build-zlib
+          cmake --install build-zlib
+
+      ################################
+      # libpng
+      ################################
+
+      - name: Build libpng
+        run: |
+          cmake -S libpng -B build-libpng ^
+            -G Ninja ^
+            -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DPNG_SHARED=OFF ^
+            -DPNG_STATIC=ON ^
+            -DZLIB_ROOT=%PREFIX%
+          cmake --build build-libpng
+          cmake --install build-libpng
+
+      ################################
+      # pixman
+      ################################
+
+      - name: Build pixman
+        run: |
+          meson setup build-pixman pixman ^
+            --default-library=static ^
+            --prefix=%PREFIX% ^
+            -Dtests=disabled
+          ninja -C build-pixman
+          ninja -C build-pixman install
+
+      ################################
+      # freetype
+      ################################
+
+      - name: Build freetype
+        run: |
+          cmake -S freetype -B build-freetype ^
+            -G Ninja ^
+            -DCMAKE_INSTALL_PREFIX=%PREFIX% ^
+            -DBUILD_SHARED_LIBS=OFF ^
+            -DFT_WITH_ZLIB=ON ^
+            -DFT_WITH_PNG=ON ^
+            -DZLIB_ROOT=%PREFIX%
+          cmake --build build-freetype
+          cmake --install build-freetype
+
+      ################################
+      # cairo
+      ################################
+
+      - name: Build cairo
+        run: |
+          meson setup build-cairo cairo ^
+            --default-library=static ^
+            --prefix=%PREFIX% ^
+            -Dfontconfig=disabled ^
+            -Dxlib=disabled ^
+            -Dxcb=disabled ^
+            -Dtests=disabled
+
+          ninja -C build-cairo
+          ninja -C build-cairo install
+
+      - name: Package
+        run: |
+          tar -czf cairo-msvc-static.tar.gz prefix
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-msvc-static
+          path: cairo-msvc-static.tar.gz
